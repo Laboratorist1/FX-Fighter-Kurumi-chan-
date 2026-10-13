@@ -168,4 +168,10 @@ These are baselines. Most won't pass the gate. That's the gate doing its job.
 - **Cost of one run:** ~45k tokens, reported as `cost_usd` 0.11 (an API-equivalent figure; on a subscription it draws plan usage).
   An hourly safety sync would be about 520 runs/month, roughly $57 equivalent. **Make the bridge event-driven only**
   (VPS fires on a new proposal, the page fires on approval), with at most a sync every few hours, or none.
-- **Pending:** the page button → `fire_trigger` path through the Claude Code Remote connector (needs the owner's click and consent).
+- **Verified (owner click):** page button → `fire_trigger` via the Claude Code Remote connector → ack in about 25 s.
+
+## Phase 1 status
+- `kurumi/risk.py`: dial, ceilings, sizing, all reject rules. `kurumi/oanda.py`: stdlib v20 client, SL-mandatory order builder.
+- Offline self-test passes (`python3 -m kurumi.test_risk`).
+- **Not yet run against OANDA.** This container can't reach it. The VPS smoke test still has to confirm the response shapes,
+  especially `homeConversions[].accountLoss` for sizing pairs whose quote currency differs from the account currency.
