@@ -160,3 +160,12 @@ These are baselines. Most won't pass the gate. That's the gate doing its job.
 ## Still open
 - The news calendar data source, and whether paying for one is OK.
 - Confirm or change the proposed numbers above.
+
+## Phase 0 results (2026-10-13)
+- Page: https://claude.ai/artifact/SEeDvZWLAjWrS9NoCLPY5C · routine `trig_01DTWFuUYztsBGy6Q79qbBkT` (fire-only, no schedule).
+- **Verified:** fire → fresh routine session → ArtifactData read + write → ack visible on the page.
+  Fire 13:47:16Z → session up 13:47:22Z → ack written 13:47:53Z, about **37 s** end to end. No approval prompt stalled the run.
+- **Cost of one run:** ~45k tokens, reported as `cost_usd` 0.11 (an API-equivalent figure; on a subscription it draws plan usage).
+  An hourly safety sync would be about 520 runs/month, roughly $57 equivalent. **Make the bridge event-driven only**
+  (VPS fires on a new proposal, the page fires on approval), with at most a sync every few hours, or none.
+- **Pending:** the page button → `fire_trigger` path through the Claude Code Remote connector (needs the owner's click and consent).
