@@ -85,7 +85,8 @@ Event flow:
    run → round-trip to a stub VPS endpoint → result back in the page db. Measure the latency
    and usage cost of one run.
 1. OANDA client + risk engine + self-tests (practice account).
-2. Backtester + first baseline strategies. Set the pass criteria.
+2. Backtester + baseline strategies + session parameter.
+   2b. High-impact news study.
 3. Live loop on demo: proposals → approvals → orders. Paper-trade for N weeks.
 4. Go-live review against the criteria → small live allocation.
 
@@ -97,12 +98,65 @@ Event flow:
 - Every routine run uses Claude subscription usage. Cost per run is unmeasured (Phase 0).
 - If the bridge is down, no new trades are placed. Open trades keep their broker-side SL/TP (fail-safe).
 
-## Open questions
-- VPS provider/region, and a domain + TLS for the API?
-- Language: Python assumed. OK?
-- Risk dial presets: exact % values for each level, and the hard upper bound?
-- Price-drift threshold for rejecting a stale approval?
-- Backtest pass criteria (e.g. min trades, profit factor, max drawdown)?
-- Demo → live criteria and the starting live allocation?
-- Trading hours and news filter (skip around high-impact events)?
-- First strategies to try?
+## Settled
+- **Host:** Hetzner VPS. API on a subdomain of the owner's domain, with TLS via Caddy
+  (automatic Let's Encrypt).
+- **Language:** Python.
+
+## Proposed (confirm or change)
+
+### Risk dial
+The dial is set from the page. The hard ceilings live in VPS config, and the page cannot change them.
+
+| Level | Risk / trade | Daily loss stop | Max open |
+|---|---|---|---|
+| 0 Paused | — | — | 0 |
+| 1 | 0.25% | 0.75% | 2 |
+| 2 | 0.5% | 1.5% | 3 |
+| 3 | 1% | 3% | 3 |
+| 4 | 1.5% | 4.5% | 4 |
+| **Hard ceiling** | 2% | 5% | 5 |
+
+- Per-proposal size scale at approval: 0.25×, 0.5×, 0.75× or 1×. It can only scale **down**.
+- Demo starts at level 2.
+
+### Stale approval (price drift)
+When an approval arrives, the VPS takes the current price and:
+- rejects if `|price − entry| > 0.25 × |entry − SL|` (a quarter of the stop distance);
+- rejects if the spread is more than 2× that pair's typical spread;
+- otherwise keeps the SL level fixed and **re-sizes** from the actual entry.
+
+### Backtest gate (profit factor)
+Profit factor alone is noisy on small samples, so it comes with guards:
+- PF ≥ 1.3 net of spread on in-sample data, **and** PF ≥ 1.2 on held-out (out-of-sample) data;
+- at least 100 trades;
+- max drawdown is reported, but it isn't a gate.
+
+### Demo → live
+- Demo PF ≥ 1.2 net of costs over at least 30 trades or 6 weeks, whichever comes later.
+- Minimum live allocation: spread scales with position size, so the fixed monthly costs
+  (VPS, domain) are what need covering. Live capital ≥ (fixed costs ÷ demo net monthly return)
+  × 3 safety margin. This is computed from the real demo results, not guessed up front.
+
+### Trading hours
+The session (Asia / London / NY / London–NY overlap) is a **backtested parameter per strategy
+and pair**. It's chosen on in-sample data and confirmed out-of-sample, so it isn't overfitted.
+
+### High-impact news — dedicated research phase (2b)
+- Needs a historical economic-calendar source. Whether OANDA offers one is **unverified**.
+  Otherwise a third-party feed (free scraping has ToS issues; paid APIs cost money).
+- Study: per pair, spread, volatility and returns around high-impact events. Each strategy's PF with vs.
+  without blackout windows (±15 / 30 / 60 min).
+- Until the study is done, demo runs without a news filter but **tags** every trade near
+  an event, so the demo data feeds the study.
+
+### First strategies (blank slate → simple, testable baselines)
+1. Trend: EMA 20/50 crossover, ATR-based SL, 2R TP (H4).
+2. Breakout: Donchian 20-bar channel break, opposite-channel or ATR SL (H1/H4).
+3. Mean reversion: RSI(14) extremes inside Bollinger bands, ranging filter (H1).
+
+These are baselines. Most won't pass the gate. That's the gate doing its job.
+
+## Still open
+- The news calendar data source, and whether paying for one is OK.
+- Confirm or change the proposed numbers above.
