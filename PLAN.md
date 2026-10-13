@@ -185,3 +185,22 @@ These are baselines. Most won't pass the gate. That's the gate doing its job.
 - Lead candidate: **Pepperstone + cTrader Open API**, which works on Linux. To verify: Costa Rica onboarding (probably the SCB Bahamas entity),
   and that this account can use the cTrader Open API.
 - Only `kurumi/oanda.py` changes. The risk engine, page and bridge are broker-agnostic.
+
+## Pepperstone Markets Ltd (SCB, Bahamas) terms: what affects the bot
+Read 2026-10-13: Client T&Cs, Risk Disclosure, Order Execution Policy (also copy-trading, privacy, cookie, conflicts, complaints; nothing relevant in those).
+- **Eligibility:** products are not for residents of Australia, UK, EU, US, or anywhere it would be unlawful (T&Cs, "Important").
+  Costa Rica isn't named. Checking local law is the client's responsibility. Residence is what counts, not the server's location.
+- **Automated trading is allowed at their discretion** (Risk Disclosure 12.4–12.5). They can restrict the account or change its password if
+  "activity or server messages" are unreasonable. → The bot stays low-frequency: act on candle close, no tight polling loops.
+- **Prohibited:** latency abuse, arbitrage, price/time manipulation, and strategies with "no downside market risk" (T&Cs 8.2(h), 12(m)).
+  → Only directional strategies with real stop-losses. No cross-account hedging.
+- **Stop-losses aren't guaranteed.** Slippage and gaps happen, mostly around news (Risk Disclosure 6.7, 7.1, 10.1). → Backtests must include
+  SL slippage. Real loss can exceed the dial %. Feeds the news study.
+- **Pepperstone is the counterparty** (principal, central risk book; Order Execution Policy 4.3, 6.1). Market orders may fill as a VWAP of several prices.
+- **Their records prevail** (T&Cs 2.18), and they can void or adjust trades on pricing errors (2.21). → Each cycle the bot reconciles positions and
+  equity from the broker and never trusts its own copy.
+- **Rollover 16:59–17:01 NY**: trading disabled for 2–5 min, spreads widen (Risk Disclosure 6.9). Hours Sun 17:01 to Fri 16:55 NY (T&Cs 1.37).
+  → **Implemented:** `risk.in_rollover` blocks 16:50–17:15 NY daily and the weekend.
+- **Retail stop-out at 50% margin level**, and retail clients get negative balance protection (Risk Disclosure 5.3, 5.5).
+- **Order types:** market, limit and stop-loss (T&Cs 2.12). Our market + SL/TP fits.
+- **Not covered by any of these documents:** whether the cTrader Open API is available on this account. That's still open.

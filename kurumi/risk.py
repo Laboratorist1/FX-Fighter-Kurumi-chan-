@@ -1,5 +1,9 @@
 """Risk engine. The VPS is the only authority: every proposal and every approval goes through here."""
 import math
+from datetime import time
+from zoneinfo import ZoneInfo
+
+NY = ZoneInfo("America/New_York")
 
 # level: (risk per trade %, daily loss stop %, max open positions)
 DIAL = {0: (0.0, 0.0, 0), 1: (0.25, 0.75, 2), 2: (0.5, 1.5, 3), 3: (1.0, 3.0, 3), 4: (1.5, 4.5, 4)}
@@ -27,9 +31,20 @@ def units(equity, risk_pct, entry, sl, quote_to_account, scale=1.0):
     return math.floor(round(equity * risk_pct / 100 * scale / per_unit_loss, 6))
 
 
+def in_rollover(now_utc):
+    """Pepperstone daily rollover 16:59-17:01 NY disables trading and widens spreads for 2-5 min
+    (Risk Disclosure 6.9); the platform closes Fri 16:55 and reopens Sun 17:01 NY (T&Cs 1.37).
+    Block a margin around both."""
+    ny = now_utc.astimezone(NY)
+    t, wd = ny.time(), ny.weekday()  # Mon=0 .. Sun=6
+    if time(16, 50) <= t < time(17, 15):
+        return True
+    return (wd == 4 and t >= time(16, 50)) or wd == 5 or (wd == 6 and t < time(17, 15))
+
+
 def reasons_to_reject(p, s):
     """p: proposal dict (side 'buy'|'sell', entry, sl, tp, scale).
-    s: state dict (level, equity, day_start_equity, open_positions, price, spread, typical_spread).
+    s: state dict (now: aware UTC datetime, level, equity, day_start_equity, open_positions, price, spread, typical_spread).
     Returns a list of reasons; empty list means OK to place."""
     r = []
     risk, daily, max_open = limits(s["level"])
@@ -51,6 +66,8 @@ def reasons_to_reject(p, s):
         r.append("max open positions reached (%d)" % max_open)
     if sl is not None and abs(s["price"] - entry) > MAX_DRIFT * abs(entry - sl):
         r.append("price drifted too far from proposed entry")
+    if in_rollover(s["now"]):
+        r.append("inside rollover / weekend window")
     if s["spread"] > MAX_SPREAD_X * s["typical_spread"]:
         r.append("spread too wide")
     return r

@@ -10,7 +10,9 @@ assert units(10_000, 1.0, 1.1, 1.1, 1.0) == 0  # zero stop distance never sizes
 # Every dial level stays under the hard ceiling.
 assert all(a <= c for lvl in DIAL for a, c in zip(limits(lvl), CEILING))
 
-ok_state = dict(level=2, equity=10_000, day_start_equity=10_000, open_positions=0,
+from datetime import datetime, timezone
+UTC = timezone.utc
+ok_state = dict(now=datetime(2026, 10, 13, 14, 0, tzinfo=UTC), level=2, equity=10_000, day_start_equity=10_000, open_positions=0,
                 price=1.1000, spread=0.00012, typical_spread=0.0001)
 buy = dict(side="buy", entry=1.1000, sl=1.0980, tp=1.1040, scale=1.0)
 assert reasons_to_reject(buy, ok_state) == []
@@ -31,6 +33,11 @@ assert rejected(open_positions=3)                            # level 2 max open
 assert rejected(price=1.1006)                                # 6 pips > 25% of 20-pip stop
 assert not rejected(price=1.1004)                            # 4 pips is within
 assert rejected(spread=0.00021)                              # > 2x typical
+assert rejected(now=datetime(2026, 10, 13, 21, 0, tzinfo=UTC))   # 17:00 NY (EDT) rollover
+assert rejected(now=datetime(2026, 1, 13, 22, 0, tzinfo=UTC))    # 17:00 NY (EST) rollover
+assert rejected(now=datetime(2026, 10, 17, 12, 0, tzinfo=UTC))   # Saturday
+assert not rejected(now=datetime(2026, 10, 18, 21, 30, tzinfo=UTC))  # Sun 17:30 NY, open
+assert not rejected(now=datetime(2026, 10, 13, 21, 30, tzinfo=UTC))  # Tue 17:30 NY, open
 print("risk ok")
 
 # Order body: sign by side, prices at pair precision, SL mandatory.
