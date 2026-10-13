@@ -7,7 +7,7 @@ to the human and decisions back.
 
 | Topic | Decision |
 |---|---|
-| Broker | OANDA v20 REST (practice → live) |
+| Broker | **Open.** OANDA v20 likely unavailable to Costa Rica residents (Global Markets division has no v20). Lead candidate: Pepperstone via cTrader Open API, still to be verified |
 | Human approves | Every trade **entry**. Exits (SL/TP) are automatic, held at OANDA |
 | Approval UI | Private Claude Artifact page (Approve / Reject + size scale) |
 | Proposal expiry | At the close of the next candle of its timeframe |
@@ -175,3 +175,13 @@ These are baselines. Most won't pass the gate. That's the gate doing its job.
 - Offline self-test passes (`python3 -m kurumi.test_risk`).
 - **Not yet run against OANDA.** This container can't reach it. The VPS smoke test still has to confirm the response shapes,
   especially `homeConversions[].accountLoss` for sizing pairs whose quote currency differs from the account currency.
+
+## Broker issue (2026-10-13)
+- Owner resides in Costa Rica. The OANDA division is set by residence, not server location. Costa Rica appears either unsupported
+  or under OANDA Global Markets (BVI), and OANDA's docs exclude Global Markets from v20 API access. The $450/mo figure on Capterra
+  is OANDA's Exchange Rates data product, not the trading API.
+- TradersUnion "Costa Rica" list (affiliate page): IUX, Exness, Pepperstone, XM, GTCFX, Valetax all say they accept residents. The page
+  has nothing on APIs. All are MetaTrader brokers. The MT5 Python package is Windows-only, so it needs Wine or a Windows VPS. Avoid.
+- Lead candidate: **Pepperstone + cTrader Open API**, which works on Linux. To verify: Costa Rica onboarding (probably the SCB Bahamas entity),
+  and that this account can use the cTrader Open API.
+- Only `kurumi/oanda.py` changes. The risk engine, page and bridge are broker-agnostic.
