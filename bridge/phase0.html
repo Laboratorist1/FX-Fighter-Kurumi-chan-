@@ -1,0 +1,137 @@
+<title>Kurumi Bridge Check</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one narrow column — status line, one action, a live log of round trips. */
+:root {
+  --bg: #f3f5f4; --surface: #ffffff; --fg: #17201d; --muted: #5b6b66;
+  --line: #d5ddda; --accent: #0f6b5c; --accent-fg: #ffffff;
+  --ok: #1d7a3e; --warn: #9a6200; --bad: #b3261e;
+  --body: "Atkinson Hyperlegible", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111816; --surface: #18211e; --fg: #e3ebe8; --muted: #93a39e;
+  --line: #2a3632; --accent: #4cc2a8; --accent-fg: #0b1412;
+  --ok: #6fd08f; --warn: #e3b260; --bad: #f08a80; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #111816; --surface: #18211e; --fg: #e3ebe8; --muted: #93a39e;
+  --line: #2a3632; --accent: #4cc2a8; --accent-fg: #0b1412;
+  --ok: #6fd08f; --warn: #e3b260; --bad: #f08a80; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font: 16px/1.5 var(--body); padding: 32px 16px; }
+main { max-width: 640px; margin: 0 auto; display: grid; gap: 24px; }
+h1 { font-size: 1.5rem; margin: 0; text-wrap: balance; }
+p { margin: 0; color: var(--muted); }
+.label { font: 600 .75rem var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: grid; gap: 12px; }
+.row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+button { font: 700 1rem var(--body); background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 6px; padding: 10px 18px; cursor: pointer; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button:focus-visible { outline: 3px solid var(--fg); outline-offset: 2px; }
+#status { font: .9rem var(--mono); }
+.ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+table { width: 100%; border-collapse: collapse; font: .85rem var(--mono); font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.scroll { overflow-x: auto; }
+</style>
+
+<main>
+  <header style="display:grid;gap:8px">
+    <span class="label">Phase 0 · bridge check</span>
+    <h1>Kurumi Bridge Check</h1>
+    <p>Sends a test approval (no trade) and starts the bridge routine. The round trip counts as working when the routine writes an acknowledgement back here.</p>
+  </header>
+
+  <section class="panel">
+    <div class="row">
+      <button id="send" disabled>Send test approval</button>
+      <span id="status">Connecting…</span>
+    </div>
+    <span class="label" id="trig">Routine: not configured yet</span>
+  </section>
+
+  <section class="panel">
+    <span class="label">Round trips</span>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Approval</th><th>Sent (UTC)</th><th>Acknowledged</th><th>Latency</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="4">No test approvals yet. Press the button to send the first one.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const setStatus = (t, cls = "") => { $("status").textContent = t; $("status").className = cls; };
+let decisions = [], acks = {}, triggerId = null;
+
+function render() {
+  const tb = $("rows");
+  if (!decisions.length) return;
+  tb.replaceChildren(...decisions.map(d => {
+    const a = acks[d.id];
+    const tr = document.createElement("tr");
+    const lat = a ? Math.round((Date.parse(a.seen_at) - Date.parse(d.created_at)) / 1000) + " s" : "—";
+    [d.id.slice(0, 8), d.created_at.slice(11, 19), a ? "yes" : "waiting", lat].forEach((v, i) => {
+      const td = document.createElement("td"); td.textContent = v;
+      if (i === 2) td.className = a ? "ok" : "warn";
+      tr.append(td);
+    });
+    return tr;
+  }));
+}
+
+const MCP_HELP = {
+  not_in_manifest: "Claude Code Remote isn't allowed for this page. Allow it in the page's Permissions menu.",
+  server_not_connected: "Add the Claude Code Remote connector in claude.ai Settings → Connectors.",
+  needs_reauth: "Reconnect Claude Code Remote in claude.ai Settings → Connectors.",
+  approval_required: "The routine start needs your approval. Press the button again and choose Allow.",
+  blocked_by_policy: "Your organization's policy blocks starting routines from a page.",
+};
+
+(async () => {
+  const [db, user, mcp] = await Promise.all(["db", "user", "mcp"].map(n => claude.use(n)));
+  if (!db) return setStatus("Data store unavailable. Sign in to claude.ai and reopen this page.", "bad");
+  const owner = user ? !!(await user.isOwner()) : false;
+
+  db.doc("config/bridge").onSnapshot(s => {
+    triggerId = s.exists ? s.data().trigger_id : null;
+    $("trig").textContent = triggerId ? "Routine: " + triggerId : "Routine: not configured yet";
+    ready();
+  }, e => setStatus("Config read failed: " + e.code, "bad"));
+  db.collection("decisions").orderBy("created_at", "desc").limit(20).onSnapshot(s => {
+    decisions = s.docs.map(d => ({ id: d.id, ...d.data() })); render();
+  }, e => setStatus("Approvals read failed: " + e.code, "bad"));
+  db.collection("acks").onSnapshot(s => {
+    acks = Object.fromEntries(s.docs.map(d => [d.id, d.data()])); render();
+  }, e => setStatus("Acknowledgements read failed: " + e.code, "bad"));
+
+  function ready() {
+    if (!owner) return setStatus("Read-only: only the owner can send approvals.", "warn");
+    if (!mcp) return setStatus("Connectors are unavailable in this view.", "bad");
+    if (!triggerId) return setStatus("Waiting for the routine ID to be configured.", "warn");
+    $("send").disabled = false; setStatus("Ready.");
+  }
+  ready();
+
+  $("send").addEventListener("click", async () => {
+    $("send").disabled = true;
+    const ref = db.collection("decisions").doc();
+    try {
+      await ref.set({ status: "approved", scale: 1, test: true, created_at: new Date().toISOString() });
+    } catch (e) { setStatus("Couldn't save the approval: " + e.code, "bad"); $("send").disabled = false; return; }
+    setStatus("Approval saved. Starting the routine…");
+    try {
+      await mcp.callTool("Claude Code Remote", "fire_trigger", { trigger_id: triggerId, text: "phase0 " + ref.id });
+      setStatus("Routine started. Waiting for its acknowledgement…", "ok");
+    } catch (e) {
+      const msg = MCP_HELP[e.code] || (e.code === "tool_error" ? "Routine start failed: " + e.message
+        : e.code === "server_unavailable" || e.code === "upstream_error"
+          ? "Unclear whether the routine started. Watch the table for an acknowledgement before sending again."
+          : "Routine start failed (" + e.code + ").");
+      setStatus(msg, "bad");
+    }
+    $("send").disabled = false;
+  });
+})();
+</script>
