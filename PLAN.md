@@ -7,7 +7,7 @@ to the human and decisions back.
 
 | Topic | Decision |
 |---|---|
-| Broker | **Open.** OANDA v20 likely unavailable to Costa Rica residents (Global Markets division has no v20). Lead candidate: Pepperstone via cTrader Open API, still to be verified |
+| Broker | **Pepperstone Markets Ltd (SCB, Bahamas), cTrader demo account.** Open API app created (status: Submitted, credentials issued). OANDA dropped: no v20 for Costa Rica residents |
 | Human approves | Every trade **entry**. Exits (SL/TP) are automatic, held at OANDA |
 | Approval UI | Private Claude Artifact page (Approve / Reject + size scale) |
 | Proposal expiry | At the close of the next candle of its timeframe |
@@ -204,3 +204,14 @@ Read 2026-10-13: Client T&Cs, Risk Disclosure, Order Execution Policy (also copy
 - **Retail stop-out at 50% margin level**, and retail clients get negative balance protection (Risk Disclosure 5.3, 5.5).
 - **Order types:** market, limit and stop-loss (T&Cs 2.12). Our market + SL/TP fits.
 - **Not covered by any of these documents:** whether the cTrader Open API is available on this account. That's still open.
+
+## cTrader client (2026-10-15)
+- `kurumi/ctrader.py` replaces `kurumi/oanda.py`. JSON over WebSocket, `wss://demo|live.ctraderapi.com:5036`. Message ids and fields are
+  taken from the official `spotware/openapi-proto-messages`, not from memory.
+- From the proto: **MARKET orders don't accept absolute SL/TP**, only `relativeStopLoss`/`relativeTakeProfit` (distance from the fill, in
+  1/100000 of a price unit). So the executor sends SL as a distance and sizes from that same distance. Risk at the stop matches the dial
+  whatever the fill, apart from slippage at the stop itself. Volume is in 1/100 units, floored to the symbol's `stepVolume`.
+- One short connection per cycle (auth → work → close). No long-lived socket or heartbeat loop needed at H1–H4.
+- **Not yet run against the server.** This container can't reach it. The VPS smoke test confirms the JSON envelope and field shapes.
+- Open: access-token lifetime about 30 days, so a refresh via `ProtoOARefreshTokenReq` (2173) needs scheduling. Redirect URI to add once
+  the app is approved. Then a one-time OAuth step to get the token.

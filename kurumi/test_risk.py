@@ -40,13 +40,16 @@ assert not rejected(now=datetime(2026, 10, 18, 21, 30, tzinfo=UTC))  # Sun 17:30
 assert not rejected(now=datetime(2026, 10, 13, 21, 30, tzinfo=UTC))  # Tue 17:30 NY, open
 print("risk ok")
 
-# Order body: sign by side, prices at pair precision, SL mandatory.
-from kurumi.oanda import order_body
-b = order_body("USD_JPY", "sell", 25_000, 150.30, 149.40, 3)["order"]
-assert b["units"] == "-25000" and b["stopLossOnFill"] == {"price": "150.300"} and b["takeProfitOnFill"] == {"price": "149.400"}
-try:
-    order_body("EUR_USD", "buy", 1000, None, None, 5)
-    raise AssertionError("order without SL was built")
-except ValueError:
-    pass
+# cTrader order payload: relative SL/TP on the price grid, volume in 1/100 units floored to step, SL mandatory.
+from kurumi.ctrader import order_req
+o = order_req(1, 22, "sell", 25_000, 0.30, 0.90, digits=3, step_volume=100_000, min_volume=100_000)
+assert o["tradeSide"] == 2 and o["volume"] == 2_500_000 and o["relativeStopLoss"] == 30_000 and o["relativeTakeProfit"] == 90_000
+o = order_req(1, 1, "buy", 12_345, 0.00203, None, digits=5, step_volume=100_000, min_volume=100_000)
+assert o["volume"] == 1_200_000 and o["relativeStopLoss"] == 203 and "relativeTakeProfit" not in o  # floored to 1k-unit step
+for bad in (dict(sl_dist=None), dict(sl_dist=0.002, units=500)):
+    try:
+        order_req(1, 1, "buy", bad.get("units", 10_000), bad["sl_dist"], None, 5, 100_000, 100_000)
+        raise AssertionError("bad order was built")
+    except ValueError:
+        pass
 print("order ok")
