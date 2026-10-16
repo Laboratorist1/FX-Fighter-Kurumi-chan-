@@ -3,9 +3,11 @@
 Message ids and fields come from spotware/openapi-proto-messages (OpenApiMessages.proto).
 Env: CTRADER_CLIENT_ID, CTRADER_CLIENT_SECRET, CTRADER_ACCESS_TOKEN, CTRADER_ACCOUNT_ID, CTRADER_LIVE=1 for live.
 Smoke test (read-only, places nothing): python -m kurumi.ctrader
+Find your CTRADER_ACCOUNT_ID (needs only client id/secret/token): python -m kurumi.ctrader accounts
 """
 import json
 import os
+import sys
 import time
 import uuid
 
@@ -39,14 +41,15 @@ class CTrader:
     def __init__(self, live=None):
         e = os.environ
         self.client_id, self.secret = e["CTRADER_CLIENT_ID"], e["CTRADER_CLIENT_SECRET"]
-        self.token, self.account = e["CTRADER_ACCESS_TOKEN"], int(e["CTRADER_ACCOUNT_ID"])
+        self.token, self.account = e["CTRADER_ACCESS_TOKEN"], int(e.get("CTRADER_ACCOUNT_ID") or 0)
         self.host = HOSTS[e.get("CTRADER_LIVE") == "1" if live is None else live]
 
     # ponytail: one short connection per cycle, no heartbeat loop. Add heartbeats if a session ever lasts > ~10 s idle.
     def __enter__(self):
         self.ws = connect(self.host, open_timeout=15)
         self._call(2100, {"clientId": self.client_id, "clientSecret": self.secret})
-        self._call(2102, {"ctidTraderAccountId": self.account, "accessToken": self.token})
+        if self.account:
+            self._call(2102, {"ctidTraderAccountId": self.account, "accessToken": self.token})
         self._symbols = None
         return self
 
@@ -71,6 +74,12 @@ class CTrader:
             m = self._recv()
             if m.get("clientMsgId") == mid:
                 return m.get("payload", {})
+
+    def accounts(self):
+        """Accounts this token can reach: ctidTraderAccountId (what the API wants), login (what the UI shows), live?, broker."""
+        r = self._call(2149, {"accessToken": self.token})
+        return [{"ctidTraderAccountId": a["ctidTraderAccountId"], "login": a.get("traderLogin"),
+                 "live": a.get("isLive", False), "broker": a.get("brokerTitleShort")} for a in r.get("ctidTraderAccount", [])]
 
     def _acc(self, **kw):
         return {"ctidTraderAccountId": self.account, **kw}
@@ -153,6 +162,12 @@ class CTrader:
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["accounts"]:
+        os.environ.pop("CTRADER_ACCOUNT_ID", None)
+        with CTrader() as c:
+            for a in c.accounts():
+                print(a)
+        sys.exit()
     with CTrader() as c:
         print("trader", c.trader())
         print("equity", c.equity())
